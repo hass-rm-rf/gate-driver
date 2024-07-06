@@ -1,0 +1,9 @@
+output:
+  - platform: slow_pwm
+    id: warning_light_out
+    pin:
+      number: GPIO5
+      mode:
+        output: True
+        pullup: True
+    period: 1s

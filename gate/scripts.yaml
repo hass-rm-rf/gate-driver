@@ -1,0 +1,211 @@
+globals:
+  - id: GATE_STATE
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: SPEED_UP
+    type: float
+    initial_value: '0.0'
+  - id: MAX_SPEED
+    type: float
+    initial_value: '0.0'
+
+script:
+  - id: warning_light_on
+    mode: single
+    then:
+      - output.set_level:
+          id: warning_light_out
+          level: "50%"
+
+  - id: warning_light_off
+    mode: single
+    then:
+      - output.turn_off: warning_light_out
+
+  - id: motor_off
+    mode: single
+    then:
+      - switch.turn_off: motor_enable
+      - output.turn_off: motor_close_pin
+      - output.turn_off: motor_open_pin
+      - if:
+          condition:
+            - switch.is_on: motor_enable
+          then:
+            - logger.log:
+                level: ERROR
+                format: "Malfunction detected!"
+                tag: main
+            - script.stop: gate_open
+            - script.stop: gate_close
+            - script.execute: warning_light_off
+
+  - id: set_speed
+    mode: single
+    then:
+      - if:
+          condition:
+            - and:
+                - or:
+                    - lambda: return id(gate).position < 0.02;
+                    - lambda: return id(gate).position > 0.98;
+                - or:
+                    - lambda: return id(gate).position != COVER_OPEN;
+                    - lambda: return id(gate).position != COVER_CLOSED;
+          then:
+            - globals.set:
+                id: MAX_SPEED
+                value: "40.0"
+          else:
+            - if:
+                condition:
+                  - and:
+                      - or:
+                          - lambda: return id(gate).position < 0.06;
+                          - lambda: return id(gate).position > 0.94;
+                      - or:
+                          - lambda: return id(gate).position != COVER_OPEN;
+                          - lambda: return id(gate).position != COVER_CLOSED;
+                then:
+                  - globals.set:
+                      id: MAX_SPEED
+                      value: "70.0"
+                else:
+                  - globals.set:
+                      id: MAX_SPEED
+                      value: "100.0"
+
+  - id: gate_open
+    mode: single
+    then:
+      - script.execute: warning_light_on
+      - script.execute: motor_off
+      - switch.turn_on: motor_enable
+      - globals.set: {id: SPEED_UP, value: "0.0"}
+      - script.execute: set_speed
+      - while:
+          condition: {lambda: "return true;"}
+          then:
+            - logger.log:
+                level: DEBUG
+                format: "Current SPEED_UP value: %.1f"
+                args: ['id(SPEED_UP)']
+            - script.execute: set_speed
+            - output.set_level:
+                id: motor_open_pin
+                level: !lambda "return id(SPEED_UP) / 100;"
+            - delay: 40ms
+            - if:
+                condition: {lambda: "return id(SPEED_UP) != id(MAX_SPEED);"}
+                then:
+                  - if:
+                      condition: {lambda: "return id(SPEED_UP) > id(MAX_SPEED);"}
+                      then:
+                        - globals.set: {id: SPEED_UP, value: !lambda "return id(SPEED_UP) - 1;"}
+                      else:
+                        - globals.set: {id: SPEED_UP, value: !lambda "return id(SPEED_UP) + 1;"}
+
+  - id: gate_close
+    mode: single
+    then:
+      - script.execute: warning_light_on
+      - script.execute: motor_off
+      - switch.turn_on: motor_enable
+      - globals.set: {id: SPEED_UP, value: "0.0"}
+      - script.execute: set_speed
+      - while:
+          condition: {lambda: "return true;"}
+          then:
+            - logger.log:
+                level: DEBUG
+                format: "Current SPEED_UP value: %.1f"
+                args: ['id(SPEED_UP)']
+            - script.execute: set_speed
+            - output.set_level:
+                id: motor_close_pin
+                level: !lambda "return id(SPEED_UP) / 100;"
+            - delay: 40ms
+            - if:
+                condition: {lambda: "return id(SPEED_UP) > id(MAX_SPEED);"}
+                then:
+                  - globals.set: {id: SPEED_UP, value: !lambda "return id(SPEED_UP) - 1;"}
+                else:
+                  - globals.set: {id: SPEED_UP, value: !lambda "return id(SPEED_UP) + 1;"}
+
+  - id: gate_stop
+    then:
+      - script.execute: motor_off
+      - script.stop: gate_open
+      - script.stop: gate_close
+      - script.execute: warning_light_off
+
+  - id: rc_action
+    then:
+      - lambda: |-
+          if(id(gate).current_operation == COVER_OPERATION_OPENING) {
+            id(gate).make_call().set_command_stop().perform();
+          } 
+          else if(id(gate).current_operation == COVER_OPERATION_CLOSING) {
+            id(gate).make_call().set_command_stop().perform();
+          }
+          
+          else if(id(gate).current_operation == COVER_OPERATION_IDLE) {
+            if(id(gate).position == 0.0) {
+              id(gate).make_call().set_command_open().perform();
+            }
+            else if(id(gate).position == 1.0) {
+              id(gate).make_call().set_command_close().perform();
+            }
+            else if(id(gate).position > 0.0) {
+              if (id(GATE_STATE)) {
+                id(gate).make_call().set_command_close().perform();
+                id(GATE_STATE) = false;
+              } else {
+                id(gate).make_call().set_command_open().perform();
+                id(GATE_STATE) = true;
+              }
+            }
+          }
+
+  - id: rc_open
+    then:
+      - lambda: |-
+          if(id(gate).current_operation == COVER_OPERATION_OPENING) {
+            id(gate).make_call().set_command_stop().perform();
+          } 
+          else if(id(gate).current_operation == COVER_OPERATION_CLOSING) {
+            id(gate).make_call().set_command_stop().perform();
+          }          
+          else if(id(gate).current_operation == COVER_OPERATION_IDLE) {
+            if(id(gate).position == 0.0) {
+              id(gate).make_call().set_command_open().perform();
+            }
+            else if(id(gate).position > 0.0) {
+              id(gate).make_call().set_command_open().perform();
+            }
+          }
+
+  - id: rc_close
+    then:
+      - lambda: |-
+          if(id(gate).current_operation == COVER_OPERATION_OPENING) {
+            id(gate).make_call().set_command_stop().perform();
+          } 
+          else if(id(gate).current_operation == COVER_OPERATION_CLOSING) {
+            id(gate).make_call().set_command_stop().perform();
+          }
+          
+          else if(id(gate).current_operation == COVER_OPERATION_IDLE) {
+            if(id(gate).position == 1.0) {
+              id(gate).make_call().set_command_close().perform();
+            }
+            else if(id(gate).position < 1.0) {
+              id(gate).make_call().set_command_close().perform();
+            }
+          }
+
+  - id: rc_stop
+    then:
+      - lambda: |-
+          id(gate).make_call().set_command_stop().perform();

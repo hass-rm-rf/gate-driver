@@ -1,0 +1,271 @@
+# GPIO13 - Krańcówka - Otwarta
+# GPIO12 - Krańcówka - Zamknięta
+# GPIO4 - Fotokomórka
+# GPIO5 - mosfet - lampa ostrzegawcza
+# GPIO14 - RF
+# GPIO19 - error control 1
+# GPIO21 - error control 2
+# GPIO25 - motor enable
+# GPIO26 - motor close
+# GPIO27 - motor open
+# GPIO32 - miernik napięcia
+# GPIO34 - ACS - pomiar A
+
+substitutions:
+  bssid: D3:AD:B3:3F:D3:AD
+
+esphome:
+  name: brama
+  friendly_name: Brama
+  libraries:
+    - https://github.com/RobTillaart/ACS712.git
+  includes:
+    - acs712_component.h
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  # level: DEBUG
+  level: INFO
+
+# Enable Home Assistant API
+api:
+  # reboot_timeout: 0s
+  encryption:
+    key: !secret api_encryption
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  power_save_mode: NONE
+  fast_connect: true
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      # bssid: ${bssid}
+      manual_ip:
+        static_ip: 192.168.1.2
+        gateway: 192.168.1.1
+        subnet: 255.255.255.0
+        dns1: 192.168.1.1
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Brama Fallback Hotspot"
+    password: !secret wifi_fallback_password
+
+captive_portal:
+
+web_server:
+  port: 80
+  auth:
+    username: !secret web_username
+    password: !secret web_password
+
+remote_receiver:
+  - pin:
+      number: GPIO14
+      inverted: True
+    dump: rc_switch
+    tolerance: 20%
+    filter: 250us
+    idle: 3ms
+    memory_blocks: 8
+    rmt_channel: 7
+    buffer_size: 30kb
+    on_rc_switch:
+      then:
+        - lambda: |-
+            uint64_t code = x.code;
+            char code_str[65];
+            for (int i = 0; i < 64; ++i) {
+              code_str[63 - i] = (code & 1) ? '1' : '0';
+              code >>= 1;
+            }
+            code_str[64] = '\0';
+
+            char liq[33];
+            char rid[29];
+            char bid[5];
+            strncpy(liq, code_str, 32);
+            liq[32] = '\0';
+            strncpy(rid, code_str + 32, 28);
+            rid[28] = '\0';
+            strncpy(bid, code_str + 60, 4);
+            bid[4] = '\0';
+            ESP_LOGI("RC", "Remote ID: %s, Button ID: %s, Liquid: %s", rid, bid, liq);
+
+packages:
+  scripts: !include
+    file: gate/scripts.yaml
+  warning_light: !include
+    file: gate/warning-light.yaml
+  rc_1: !include
+    file: gate/remote.yaml
+    vars:
+      remote_id: "1111111111111111111111111111"
+      name: "RC1"
+      name_lower: "rc1"
+  rc_2: !include
+    file: gate/remote.yaml
+    vars:
+      remote_id: "1111111111111100000000000000"
+      name: "RC2"
+      name_lower: "rc2"
+  rc_3: !include
+    file: gate/remote.yaml
+    vars:
+      remote_id: "0000000000000001111111111111"
+      name: "RC3"
+      name_lower: "rc3
+      "
+
+binary_sensor:
+  - platform: gpio
+    id: open_endstop
+    name: "Krancowka Brama Otwarta"
+    pin:
+      number: GPIO13
+      mode:
+        input: True
+        pullup: True
+
+  - platform: gpio
+    id: close_endstop
+    name: "Krancowka Brama Zamknieta"
+    pin:
+      number: GPIO12
+      mode:
+        input: True
+        pullup: True
+
+  - platform: template
+    id: obstacle
+    name: Przeszkoda
+    lambda: |-
+      if(id(obstacle_amps).state or id(obstacle_sensor).state) {
+        return true;
+      } else {
+        return false;
+      }
+
+  - platform: analog_threshold
+    id: obstacle_amps
+    name: Duze obciazenie silnika
+    sensor_id: amps
+    threshold: 1.0
+
+  - platform: gpio
+    name: Fotokomorka
+    id: obstacle_sensor
+    pin:
+      number: GPIO4
+      inverted: True
+      mode:
+        input: True
+        pulldown: True
+
+
+  # - platform: gpio
+  #   name: "ERROR PWM R"
+  #   pin:
+  #     number: GPIO19
+  #     mode:
+  #       input: True
+  #       # pulldown: True
+
+
+  # - platform: gpio
+  #   name: "ERROR PWM L"
+  #   pin:
+  #     number: GPIO21
+  #     mode:
+  #       input: True
+  #       # pulldown: True
+
+sensor:
+  - platform: custom
+    lambda: |-
+      auto acs712_sensor = new ACS712Sensor();
+      App.register_component(acs712_sensor);
+      return {acs712_sensor->current_sensor, acs712_sensor->power_sensor};
+    sensors:
+      - name: "Pobor Amper"
+        id: amps
+        unit_of_measurement: A
+        accuracy_decimals: 2
+      - name: "Pobor Watt"
+        id: watts
+        unit_of_measurement: W
+        accuracy_decimals: 2
+
+switch:
+  - platform: gpio
+    id: motor_enable
+    internal: True
+    pin:
+      number: GPIO25
+      mode:
+        output: True
+        pulldown: True
+
+
+
+output:
+  - platform: ledc
+    id: motor_close_pin
+    pin:
+      number: GPIO26
+      mode:
+        output: True
+        pulldown: True
+    frequency: "19531Hz"
+
+  - platform: ledc
+    id: motor_open_pin
+    pin:
+      number: GPIO27
+      mode:
+        output: True
+        pulldown: True
+    frequency: "19531Hz"
+
+cover:
+  - platform: feedback
+    id: gate
+    name: "Brama"
+    device_class: gate
+    max_duration: 30s
+    direction_change_wait_time: 500ms
+    acceleration_wait_time: 300ms
+    open_duration: 24s
+    open_endstop: open_endstop
+    close_duration: 24s
+    close_endstop: close_endstop
+    open_obstacle_sensor: obstacle
+    close_obstacle_sensor: obstacle
+    obstacle_rollback: 0%
+    on_closed:
+      then:
+        - script.execute: gate_stop
+    on_open:
+      then:
+        - script.execute: gate_stop
+
+    open_action:
+      then:
+        - script.execute: gate_open
+
+    close_action:
+      then:
+        - script.execute: gate_close
+
+    stop_action:
+      then:
+        - script.execute: gate_stop

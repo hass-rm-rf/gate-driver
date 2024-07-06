@@ -1,0 +1,56 @@
+binary_sensor:
+  - platform: remote_receiver
+    name: "Remote ${name} - Button 1"
+    id: remote_${name_lower}_1
+    rc_switch_raw:
+      code: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx${remote_id}1011"
+      protocol: 6
+    filters:
+      - delayed_off:
+          seconds: 1
+    on_press:
+      then:
+        - script.execute:
+            id: rc_action
+
+  - platform: remote_receiver
+    name: "Remote ${name} - Button 2"
+    id: remote_${name_lower}_2
+    rc_switch_raw:
+      code: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx${remote_id}1101"
+      protocol: 6
+    filters:
+      - delayed_off:
+          seconds: 1
+    on_press:
+      then:
+        - script.execute:
+            id: rc_stop
+
+  - platform: remote_receiver
+    name: "Remote ${name} - Button 3"
+    id: remote_${name_lower}_3
+    rc_switch_raw:
+      code: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx${remote_id}0110"
+      protocol: 6
+    filters:
+      - delayed_off:
+          seconds: 1
+    on_press:
+      then:
+        - script.execute:
+            id: rc_open
+
+  - platform: remote_receiver
+    name: "Remote ${name} - Button 4"
+    id: remote_${name_lower}_4
+    rc_switch_raw:
+      code: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx${remote_id}0100"
+      protocol: 6
+    filters:
+      - delayed_off:
+          seconds: 1
+    on_press:
+      then:
+        - script.execute:
+            id: rc_close
